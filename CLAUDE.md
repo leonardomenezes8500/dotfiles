@@ -16,7 +16,7 @@ Repo **público**. Quem mexe no stow é o Claude; o usuário só pede ("põe a c
 1. Ler o arquivo inteiro e tirar tudo sensível ou específico da máquina (ver abaixo).
 2. Criar no repo no caminho espelhado, mover o original pra backup (`~/.dotfiles-backup/<data>/`), `stow -v <pacote>`.
 3. Nunca usar `--adopt` (sobrescreve o repo com o arquivo da home sem revisão).
-4. Atualizar a tabela do README.
+4. README fica mínimo e em inglês: só atualizar a lista de pacotes no `stow ...`.
 
 ## Nunca vai pro repo
 - Tokens, chaves, senhas, `~/.ssh/*` (inclusive `config`: tem hosts/IPs), `~/.config/gh/hosts.yml`, histórico de shell, `.claude.json`.
