@@ -14,7 +14,7 @@
 
 ## Adding a config
 1. Read the whole file and strip anything sensitive or machine-specific (see below).
-2. Create it at the mirrored path in the repo, move the original to `~/.dotfiles-backup/<date>/`, then `stow -v <pkg>`.
+2. Create it at the mirrored path in the repo, delete the original (git is the backup), then `stow -v <pkg>`.
 3. Never use `--adopt` (it overwrites the repo with the home file, unreviewed).
 4. Keep the README minimal: only update the package list in the `stow ...` line.
 
