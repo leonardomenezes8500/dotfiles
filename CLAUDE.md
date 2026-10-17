@@ -21,6 +21,6 @@ Repo **público**: o mais importante é nunca vazar informação sensível pro G
 ## Nunca vai pro repo
 - Tokens, chaves, senhas, `~/.ssh/*` (inclusive `config`: tem hosts/IPs), `~/.config/gh/hosts.yml`, histórico de shell, `.claude.json`.
 - E-mail/nome pessoal → `~/.config/git/config.local`. Coisas desta máquina (paths, sessões tmux, hosts) → `~/.bashrc.local`.
-- Env vars de projeto → direnv (`.envrc` + `.env`, ambos ignorados).
+- Env vars de projeto → direnv: `.envrc` carrega, valores no `.env` (bloqueado pelo ignore global).
 - Mensagens de commit sempre em inglês.
 - Antes de todo commit: `git diff --cached` + `git grep -nIiE '(token|secret|passw|api[_-]?key|BEGIN .*PRIVATE|gh[pousr]_|sk-)'` e revisar cada hit.
