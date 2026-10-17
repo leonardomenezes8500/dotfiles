@@ -1,4 +1,4 @@
-# Ignore global: segredos de projeto nunca entram em nenhum repo
+# Global ignore: project secrets never get committed
 .env
 .env.local
 .envrc.local

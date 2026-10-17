@@ -1,6 +1,6 @@
-[include]
-	# nome/e-mail ficam fora do repo público
-	path = ~/.config/git/config.local
+[user]
+	name = Leonardo Menezes
+	email = leonardomenezes8500@gmail.com
 [core]
 	editor = nvim
 [init]

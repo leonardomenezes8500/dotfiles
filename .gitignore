@@ -1,4 +1,4 @@
-# Arquivos locais/segredos nunca entram
+# Local files and secrets never go in
 *.local
 .env
 .env.*

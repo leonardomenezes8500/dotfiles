@@ -32,10 +32,10 @@ export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
 
-# direnv: carrega/descarrega o .envrc de cada pasta
+# direnv: load/unload each directory's .envrc
 command -v direnv >/dev/null && eval "$(direnv hook bash)"
 
-# Coisas desta máquina (fora do git): paths, sessões, segredos nunca aqui
+# Machine-specific stuff (not in git)
 [ -f ~/.bashrc.local ] && . ~/.bashrc.local
 
 if [ -x "$(command -v tmux)" ] && [ -n "${DISPLAY}" ] && [ -z "${TMUX}" ]; then

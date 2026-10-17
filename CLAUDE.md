@@ -1,26 +1,29 @@
-# dotfiles: regras pro Claude
+# dotfiles: rules for Claude
 
-Repo **público**: o mais importante é nunca vazar informação sensível pro GitHub. Quem mexe no stow é o Claude; o usuário só pede ("põe a config do X no dotfiles", "instala na máquina nova").
+**Public repo**: above all, never push sensitive information to GitHub. Claude runs stow; the user just asks ("add X's config to dotfiles", "set up a new machine").
 
-## Estrutura
-- Cada pasta do topo = pacote stow, espelhando `~` (ex.: `nvim/.config/nvim/init.lua` → `~/.config/nvim/init.lua`).
-- `.stowrc` já define `--target=~ --no-folding`. Sempre rodar `stow` de dentro do repo.
-- `--no-folding` é obrigatório: sem ele o stow linka a pasta inteira e plugins/caches (tpm, etc.) caem dentro do repo.
+## Layout
+- Each top-level dir is a stow package mirroring `~` (e.g. `nvim/.config/nvim/init.lua` → `~/.config/nvim/init.lua`).
+- `.stowrc` sets `--target=~ --no-folding`. Always run `stow` from the repo root.
+- `--no-folding` is required: without it stow links whole dirs and plugins/caches (tpm, etc.) end up inside the repo.
 
-## Comandos
-- Ensaio antes de tudo: `stow -n -v <pacote>`
-- Linkar: `stow -v <pacote>` · Relinkar após adicionar arquivo: `stow -R -v <pacote>` · Remover links: `stow -D -v <pacote>`
-- Conferir: `ls -la ~/<arquivo>` deve apontar pro repo.
+## Commands
+- Dry run first: `stow -n -v <pkg>`
+- Link: `stow -v <pkg>` · Relink after adding a file: `stow -R -v <pkg>` · Unlink: `stow -D -v <pkg>`
+- Check: `ls -la ~/<file>` should point into the repo.
 
-## Adicionar uma config nova
-1. Ler o arquivo inteiro e tirar tudo sensível ou específico da máquina (ver abaixo).
-2. Criar no repo no caminho espelhado, mover o original pra backup (`~/.dotfiles-backup/<data>/`), `stow -v <pacote>`.
-3. Nunca usar `--adopt` (sobrescreve o repo com o arquivo da home sem revisão).
-4. README fica mínimo e em inglês: só atualizar a lista de pacotes no `stow ...`.
+## Adding a config
+1. Read the whole file and strip anything sensitive or machine-specific (see below).
+2. Create it at the mirrored path in the repo, move the original to `~/.dotfiles-backup/<date>/`, then `stow -v <pkg>`.
+3. Never use `--adopt` (it overwrites the repo with the home file, unreviewed).
+4. Keep the README minimal: only update the package list in the `stow ...` line.
 
-## Nunca vai pro repo
-- Tokens, chaves, senhas, `~/.ssh/*` (inclusive `config`: tem hosts/IPs), `~/.config/gh/hosts.yml`, histórico de shell, `.claude.json`.
-- E-mail/nome pessoal → `~/.config/git/config.local`. Coisas desta máquina (paths, sessões tmux, hosts) → `~/.bashrc.local`.
-- Env vars de projeto → direnv: `.envrc` carrega, valores no `.env` (bloqueado pelo ignore global).
-- Mensagens de commit sempre em inglês.
-- Antes de todo commit: `git diff --cached` + `git grep -nIiE '(token|secret|passw|api[_-]?key|BEGIN .*PRIVATE|gh[pousr]_|sk-)'` e revisar cada hit.
+## Never in the repo
+- Tokens, keys, passwords, `~/.ssh/*` (including `config`: hosts/IPs), `~/.config/gh/hosts.yml`, shell history, `.claude.json`.
+- Machine-specific stuff (paths, tmux sessions, hosts) → `~/.bashrc.local`.
+- Project env vars → direnv: `.envrc` loads them, values live in `.env` (blocked by the global ignore).
+- Name and email in the git config are fine (already public in commits).
+
+## Consistency
+- Everything in English: comments, commit messages, docs.
+- Before every commit: `git diff --cached` + `git grep -nIiE '(token|secret|passw|api[_-]?key|BEGIN .*PRIVATE|gh[pousr]_|sk-)'` and review every hit.
