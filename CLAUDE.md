@@ -1,6 +1,6 @@
 # dotfiles: regras pro Claude
 
-Repo **público**. Quem mexe no stow é o Claude; o usuário só pede ("põe a config do X no dotfiles", "instala na máquina nova").
+Repo **público**: o mais importante é nunca vazar informação sensível pro GitHub. Quem mexe no stow é o Claude; o usuário só pede ("põe a config do X no dotfiles", "instala na máquina nova").
 
 ## Estrutura
 - Cada pasta do topo = pacote stow, espelhando `~` (ex.: `nvim/.config/nvim/init.lua` → `~/.config/nvim/init.lua`).
@@ -22,4 +22,5 @@ Repo **público**. Quem mexe no stow é o Claude; o usuário só pede ("põe a c
 - Tokens, chaves, senhas, `~/.ssh/*` (inclusive `config`: tem hosts/IPs), `~/.config/gh/hosts.yml`, histórico de shell, `.claude.json`.
 - E-mail/nome pessoal → `~/.config/git/config.local`. Coisas desta máquina (paths, sessões tmux, hosts) → `~/.bashrc.local`.
 - Env vars de projeto → direnv (`.envrc` + `.env`, ambos ignorados).
+- Mensagens de commit sempre em inglês.
 - Antes de todo commit: `git diff --cached` + `git grep -nIiE '(token|secret|passw|api[_-]?key|BEGIN .*PRIVATE|gh[pousr]_|sk-)'` e revisar cada hit.
