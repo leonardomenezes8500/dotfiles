@@ -4,13 +4,14 @@
 The user just asks; Claude does the work. "install", "setup", "set up my machine" means: dotfiles + programs + skills, i.e. run `./install.sh` (re-runnable).
 
 ## Layout
-- `install.sh`: the whole setup. Lists in it: `PKGS` (stow packages), `PLUGINS` (Claude marketplaces); uv tools, npm globals and skills are plain lines.
+- `install.sh`: the whole setup. Assumes Arch with a sudo user and base-devel already set up. Lists in it: `PKGS` (stow packages), `PLUGINS` (Claude marketplaces); uv tools, npm globals and skills are plain lines.
 - `pacman.txt`: explicit pacman packages. Refresh with `pacman -Qqe | grep -vx base > pacman.txt`.
 - Every top-level dir is a stow package mirroring `~`. `.stowrc` sets `--target=~ --no-folding` (required, or plugins/caches land in the repo). Run stow from the repo root.
 
 ## Changes
 - New config: read it all, strip secrets/machine-only bits, put it at the mirrored path, delete the original (git is the backup), `stow -v <pkg>`. Never `--adopt`.
 - New program/tool/skill: add its line to `install.sh` (or `pacman.txt`), keep each step idempotent.
+- Where tools go: general deps (java, adb, ghidra, ffmpeg...) → `pacman.txt`; tools only one skill uses → `~/tools` from the upstream release, pinned and sha256-checked. Global npm only for broadly useful CLIs (e.g. playwright-cli).
 - New stow package: add it to `PKGS`.
 
 ## Never in the repo

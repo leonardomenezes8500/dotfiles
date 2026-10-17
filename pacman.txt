@@ -14,7 +14,6 @@ ghidra
 git
 github-cli
 go
-jadx
 jdk21-openjdk
 libxcomposite
 libxdamage

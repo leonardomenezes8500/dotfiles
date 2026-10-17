@@ -42,6 +42,16 @@ step "node + npm globals"
 bash -c '. "$HOME/.nvm/nvm.sh" && nvm install --lts && nvm install-latest-npm && npm install -g rea-agents @playwright/cli@latest'
 has codex || bash -c '. "$HOME/.nvm/nvm.sh" && npm install -g @openai/codex'
 
+step "skill tools (~/tools)"
+# rea's jadx engine: rea pins this release and its sha256, but does not download it
+J="$HOME/tools/jadx-headless-mcp/jadx-headless-mcp-0.7.1-all.jar"
+if [ ! -f "$J" ]; then
+	mkdir -p "${J%/*}"
+	curl -fL -o "$J.part" https://github.com/1013503897/jadx-headless-mcp/releases/download/v0.7.1/jadx-headless-mcp-0.7.1-all.jar
+	echo "6e5eacf500b64292bfb73c49797c1958f6ee44646e43e868039ae7feb573ff75  $J.part" | sha256sum -c -
+	mv "$J.part" "$J"
+fi
+
 step "gh login"
 gh auth status >/dev/null 2>&1 || gh auth login --git-protocol https --web
 
@@ -53,7 +63,9 @@ for r in $PLUGINS; do
 	claude plugin list | grep -q "❯ $n@$n$" || claude plugin install "$n@$n"
 done
 graphify install --platform claude
-bash -c '. "$HOME/.nvm/nvm.sh" && rea setup'
+bash -c '. "$HOME/.nvm/nvm.sh" && npx -y skills add remotion-dev/skills -g -s "*" -a claude-code codex -y \
+	&& npx -y skills add vercel-labs/agent-skills -g -s web-design-guidelines -a claude-code codex -y'
+GHIDRA_INSTALL_DIR=/opt/ghidra REA_JADX_MCP_JAR="$J" bash -c '. "$HOME/.nvm/nvm.sh" && rea setup --yes --client claude_code --client codex'
 
 step "done"
 echo "Manual: motion-video-director (paid skill) -> ~/.claude/skills/; machine-only stuff -> ~/.bashrc.local"

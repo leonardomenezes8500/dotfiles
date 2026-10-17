@@ -21,6 +21,8 @@ PS1="${GREEN}[\u@\h \W]\$${RESET} "
 export EDITOR='nvim'
 export HISTCONTROL="erasedups:ignorespace"
 export SSH_AUTH_SOCK="$XDG_RUNTIME_DIR/ssh-agent.socket"
+export GHIDRA_INSTALL_DIR='/opt/ghidra'
+export REA_JADX_MCP_JAR="$HOME/tools/jadx-headless-mcp/jadx-headless-mcp-0.7.1-all.jar" # version pinned by rea-agents
 
 shopt -s autocd
 set -o noclobber
