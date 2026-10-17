@@ -12,7 +12,7 @@ step() { printf '\n==> %s\n' "$*"; }
 has() { command -v "$1" >/dev/null 2>&1; }
 
 step "pacman packages"
-sudo pacman -Syu --needed --noconfirm - < pacman.txt
+sudo pacman -Syu --needed --noconfirm $(cat pacman.txt)
 
 if grep -qi microsoft /proc/version && ! grep -q 'systemd=true' /etc/wsl.conf 2>/dev/null; then
 	step "wsl.conf (restart WSL afterwards: wsl --shutdown)"
