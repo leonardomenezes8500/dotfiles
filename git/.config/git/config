@@ -1,0 +1,20 @@
+[include]
+	# nome/e-mail ficam fora do repo público
+	path = ~/.config/git/config.local
+[core]
+	editor = nvim
+[init]
+	defaultBranch = main
+[alias]
+	ll = log --oneline
+	st = status
+	co = checkout
+	br = branch
+	ci = commit
+	unstage = reset HEAD --
+[credential "https://github.com"]
+	helper =
+	helper = !/usr/bin/gh auth git-credential
+[credential "https://gist.github.com"]
+	helper =
+	helper = !/usr/bin/gh auth git-credential

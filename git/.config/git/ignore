@@ -1,0 +1,5 @@
+# Ignore global: segredos de projeto nunca entram em nenhum repo
+.env
+.env.local
+.envrc.local
+.direnv/

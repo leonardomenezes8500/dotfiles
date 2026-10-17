@@ -1,0 +1,6 @@
+# Arquivos locais/segredos nunca entram
+*.local
+.env
+.env.*
+.envrc
+.direnv/
