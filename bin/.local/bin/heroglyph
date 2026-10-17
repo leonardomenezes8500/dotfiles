@@ -1,0 +1,581 @@
+#!/bin/sh
+# heroglyph — figlet-like pixel-art text, mini.nvim logo style: 4x7 blocky
+# glyphs, no antialiasing, no font hinting artifacts. Prints ASCII block art
+# to stdout, or (with -o) a colored PNG via ImageMagick.
+#
+# Font shapes are transcribed pixel-for-pixel from nvim-mini/assets
+# logo-2/font/*.gif (MIT License, (c) Evgeni Chasnovski) — see README.md.
+#
+# POSIX sh + awk do all the layout; `magick` is only needed for -o.
+set -eu
+
+usage() {
+	cat <<'EOF'
+usage: heroglyph [options] TEXT[:COLOR] ...
+
+  -o FILE     write a PNG
+  -p PALETTE  summer, mini, spring, autumn
+  -l          light variant
+  -P          one PNG per palette
+  -b COLOR    background
+  -s SCALE    pixels per cell (default 15)
+  :COLOR      #hex, accent1 or accent2
+              o:accent splits a letter in two
+  .env        HEROGLYPH_PALETTE, HEROGLYPH_MODE
+              HEROGLYPH_BG/FG/ACCENT1/ACCENT2
+
+  heroglyph "hello"
+  heroglyph -o logo.png "hero:#E9B949" "glyph:#40B5AD"
+EOF
+}
+
+# name:mode -> bg fg accent1 accent2. All real mini.hues colors (see README
+# Credits), never invented — both the dark values and each scheme's own
+# light-mode block, straight from colors/*.lua in their repo. mini is the
+# actual mini.nvim logo (their miniwinter scheme); spring/summer/autumn are
+# the other 3 bundled season schemes. mini.hues places its 8 named hues
+# (red/orange/yellow/green/cyan/azure/blue/purple) at fixed 45-degree steps
+# around the OKLCH hue wheel (lua/mini/hues.lua, H.make_hues) — so
+# accent1/accent2 for spring/summer/autumn are each a true complementary
+# pair (180 degrees apart: green+purple, azure+orange, red+cyan), one
+# different pair per palette, kept the same pair of named hues between a
+# palette's dark and light variant (just their light-mode hex values).
+resolve_palette() {
+	case "$1:$2" in
+	mini:dark) base_bg="#00182A" base_fg="#D9D8AA" base_a1="#A6E1E2" base_a2="#B8E1C1" ;;
+	mini:light) base_bg="#DCE4E8" base_fg="#312E29" base_a1="#016D71" base_a2="#00562E" ;;
+	spring:dark) base_bg="#1C2617" base_fg="#D8DA9D" base_a1="#ABE5BE" base_a2="#F7C2EA" ;;
+	spring:light) base_bg="#E0E4DE" base_fg="#2C2E33" base_a1="#006D3F" base_a2="#600051" ;;
+	summer:dark) base_bg="#27211E" base_fg="#F6CC9B" base_a1="#93E4EE" base_a2="#FFC1B9" ;;
+	summer:light) base_bg="#E9E1DD" base_fg="#2C2E33" base_a1="#007E87" base_a2="#700011" ;;
+	autumn:dark) base_bg="#262029" base_fg="#EFCFAB" base_a1="#F1C6E2" base_a2="#B4E2C7" ;;
+	autumn:light) base_bg="#E5E1E7" base_fg="#2F2E29" base_a1="#52073F" base_a2="#005E3D" ;;
+	*)
+		echo "heroglyph: unknown palette '$1' (mini, spring, summer, autumn)" >&2
+		exit 1
+		;;
+	esac
+}
+
+AWKPROG=$(cat <<'AWKEOF'
+function get(ch, r,    k) {
+	k = ch SUBSEP r
+	return (k in font) ? font[k] : "0000"
+}
+# style[ch,row]: which "on" pixels of a glyph go to the 2nd color instead of
+# the 1st, for the handful of letters we bothered to hand-style (see -o
+# TEXT:COLOR1,COLOR2 below). Not a general rule — mini.nvim only ever does
+# this for one letter in its whole font (the "n" in their nvim wordmark);
+# it's opt-in per letter, add more here as needed.
+function get_style(ch, r,    k) {
+	k = ch SUBSEP r
+	return (k in style) ? style[k] : "0000"
+}
+BEGIN {
+	font["0",0] = "0000"
+	font["0",1] = "0100"
+	font["0",2] = "1010"
+	font["0",3] = "1010"
+	font["0",4] = "1010"
+	font["0",5] = "0100"
+	font["0",6] = "0000"
+	font["1",0] = "0000"
+	font["1",1] = "1100"
+	font["1",2] = "0100"
+	font["1",3] = "0100"
+	font["1",4] = "0100"
+	font["1",5] = "1110"
+	font["1",6] = "0000"
+	font["2",0] = "0000"
+	font["2",1] = "1110"
+	font["2",2] = "0010"
+	font["2",3] = "1110"
+	font["2",4] = "1000"
+	font["2",5] = "1110"
+	font["2",6] = "0000"
+	font["3",0] = "0000"
+	font["3",1] = "1110"
+	font["3",2] = "0010"
+	font["3",3] = "0110"
+	font["3",4] = "0010"
+	font["3",5] = "1110"
+	font["3",6] = "0000"
+	font["4",0] = "0000"
+	font["4",1] = "1010"
+	font["4",2] = "1010"
+	font["4",3] = "1110"
+	font["4",4] = "0010"
+	font["4",5] = "0010"
+	font["4",6] = "0000"
+	font["5",0] = "0000"
+	font["5",1] = "1110"
+	font["5",2] = "1000"
+	font["5",3] = "1100"
+	font["5",4] = "0010"
+	font["5",5] = "1100"
+	font["5",6] = "0000"
+	font["6",0] = "0000"
+	font["6",1] = "1110"
+	font["6",2] = "1000"
+	font["6",3] = "1110"
+	font["6",4] = "1010"
+	font["6",5] = "1110"
+	font["6",6] = "0000"
+	font["7",0] = "0000"
+	font["7",1] = "1110"
+	font["7",2] = "0010"
+	font["7",3] = "0010"
+	font["7",4] = "0010"
+	font["7",5] = "0010"
+	font["7",6] = "0000"
+	font["8",0] = "0000"
+	font["8",1] = "1110"
+	font["8",2] = "1010"
+	font["8",3] = "1110"
+	font["8",4] = "1010"
+	font["8",5] = "1110"
+	font["8",6] = "0000"
+	font["9",0] = "0000"
+	font["9",1] = "1110"
+	font["9",2] = "1010"
+	font["9",3] = "1110"
+	font["9",4] = "0010"
+	font["9",5] = "1110"
+	font["9",6] = "0000"
+	font["a",0] = "0000"
+	font["a",1] = "1110"
+	font["a",2] = "1010"
+	font["a",3] = "1110"
+	font["a",4] = "1010"
+	font["a",5] = "1010"
+	font["a",6] = "0000"
+	font["b",0] = "0000"
+	font["b",1] = "1110"
+	font["b",2] = "1010"
+	font["b",3] = "1100"
+	font["b",4] = "1010"
+	font["b",5] = "1110"
+	font["b",6] = "0000"
+	font["c",0] = "0000"
+	font["c",1] = "1110"
+	font["c",2] = "1000"
+	font["c",3] = "1000"
+	font["c",4] = "1000"
+	font["c",5] = "1110"
+	font["c",6] = "0000"
+	font["d",0] = "0000"
+	font["d",1] = "1100"
+	font["d",2] = "1010"
+	font["d",3] = "1010"
+	font["d",4] = "1010"
+	font["d",5] = "1100"
+	font["d",6] = "0000"
+	font["e",0] = "0000"
+	font["e",1] = "1110"
+	font["e",2] = "1000"
+	font["e",3] = "1100"
+	font["e",4] = "1000"
+	font["e",5] = "1110"
+	font["e",6] = "0000"
+	font["f",0] = "0000"
+	font["f",1] = "1110"
+	font["f",2] = "1000"
+	font["f",3] = "1100"
+	font["f",4] = "1000"
+	font["f",5] = "1000"
+	font["f",6] = "0000"
+	font["g",0] = "0000"
+	font["g",1] = "1110"
+	font["g",2] = "1000"
+	font["g",3] = "1010"
+	font["g",4] = "1010"
+	font["g",5] = "1110"
+	font["g",6] = "0000"
+	font["h",0] = "0000"
+	font["h",1] = "1010"
+	font["h",2] = "1010"
+	font["h",3] = "1110"
+	font["h",4] = "1010"
+	font["h",5] = "1010"
+	font["h",6] = "0000"
+	font["i",0] = "0000"
+	font["i",1] = "1110"
+	font["i",2] = "0100"
+	font["i",3] = "0100"
+	font["i",4] = "0100"
+	font["i",5] = "1110"
+	font["i",6] = "0000"
+	font["j",0] = "0000"
+	font["j",1] = "0010"
+	font["j",2] = "0010"
+	font["j",3] = "0010"
+	font["j",4] = "1010"
+	font["j",5] = "1110"
+	font["j",6] = "0000"
+	font["k",0] = "0000"
+	font["k",1] = "1010"
+	font["k",2] = "1010"
+	font["k",3] = "1100"
+	font["k",4] = "1010"
+	font["k",5] = "1010"
+	font["k",6] = "0000"
+	font["l",0] = "0000"
+	font["l",1] = "1000"
+	font["l",2] = "1000"
+	font["l",3] = "1000"
+	font["l",4] = "1000"
+	font["l",5] = "1110"
+	font["l",6] = "0000"
+	font["m",0] = "0000"
+	font["m",1] = "1010"
+	font["m",2] = "1110"
+	font["m",3] = "1110"
+	font["m",4] = "1010"
+	font["m",5] = "1010"
+	font["m",6] = "0000"
+	font["n",0] = "0000"
+	font["n",1] = "1100"
+	font["n",2] = "1010"
+	font["n",3] = "1010"
+	font["n",4] = "1010"
+	font["n",5] = "1010"
+	font["n",6] = "0000"
+	font["o",0] = "0000"
+	font["o",1] = "1110"
+	font["o",2] = "1010"
+	font["o",3] = "1010"
+	font["o",4] = "1010"
+	font["o",5] = "1110"
+	font["o",6] = "0000"
+	font["p",0] = "0000"
+	font["p",1] = "1110"
+	font["p",2] = "1010"
+	font["p",3] = "1110"
+	font["p",4] = "1000"
+	font["p",5] = "1000"
+	font["p",6] = "0000"
+	font["q",0] = "0000"
+	font["q",1] = "1110"
+	font["q",2] = "1010"
+	font["q",3] = "1010"
+	font["q",4] = "1000"
+	font["q",5] = "1110"
+	font["q",6] = "0000"
+	font["r",0] = "0000"
+	font["r",1] = "1110"
+	font["r",2] = "1010"
+	font["r",3] = "1100"
+	font["r",4] = "1010"
+	font["r",5] = "1010"
+	font["r",6] = "0000"
+	font["s",0] = "0000"
+	font["s",1] = "1110"
+	font["s",2] = "1000"
+	font["s",3] = "1110"
+	font["s",4] = "0010"
+	font["s",5] = "1110"
+	font["s",6] = "0000"
+	font["t",0] = "0000"
+	font["t",1] = "1110"
+	font["t",2] = "0100"
+	font["t",3] = "0100"
+	font["t",4] = "0100"
+	font["t",5] = "0100"
+	font["t",6] = "0000"
+	font["u",0] = "0000"
+	font["u",1] = "1010"
+	font["u",2] = "1010"
+	font["u",3] = "1010"
+	font["u",4] = "1010"
+	font["u",5] = "1110"
+	font["u",6] = "0000"
+	font["v",0] = "0000"
+	font["v",1] = "1010"
+	font["v",2] = "1010"
+	font["v",3] = "1010"
+	font["v",4] = "1010"
+	font["v",5] = "0100"
+	font["v",6] = "0000"
+	font["w",0] = "0000"
+	font["w",1] = "1010"
+	font["w",2] = "1010"
+	font["w",3] = "1110"
+	font["w",4] = "1110"
+	font["w",5] = "1010"
+	font["w",6] = "0000"
+	font["x",0] = "0000"
+	font["x",1] = "1010"
+	font["x",2] = "1010"
+	font["x",3] = "0100"
+	font["x",4] = "1010"
+	font["x",5] = "1010"
+	font["x",6] = "0000"
+	font["y",0] = "0000"
+	font["y",1] = "1010"
+	font["y",2] = "1010"
+	font["y",3] = "1110"
+	font["y",4] = "0100"
+	font["y",5] = "0100"
+	font["y",6] = "0000"
+	font["z",0] = "0000"
+	font["z",1] = "1110"
+	font["z",2] = "0010"
+	font["z",3] = "0100"
+	font["z",4] = "1000"
+	font["z",5] = "1110"
+	font["z",6] = "0000"
+	font[" ",0] = "0000"
+	font[" ",1] = "0000"
+	font[" ",2] = "0000"
+	font[" ",3] = "0000"
+	font[" ",4] = "0000"
+	font[" ",5] = "0000"
+	font[" ",6] = "0000"
+	# "." has no font/*.gif of its own: it only exists baked into
+	# font/prefix.gif (the "MINI." every mini.nvim logo starts with).
+	font[".",0] = "0000"
+	font[".",1] = "0000"
+	font[".",2] = "0000"
+	font[".",3] = "0000"
+	font[".",4] = "0000"
+	font[".",5] = "0100"
+	font[".",6] = "0000"
+
+	# hand-styled letters: which of their "on" pixels use the 2nd color.
+	# "o" — our own split, left stroke vs. the rest (top/right/bottom arc).
+	style["o",1] = "0110"
+	style["o",2] = "0010"
+	style["o",3] = "0010"
+	style["o",4] = "0010"
+	style["o",5] = "0110"
+	# "n" — the real mini.nvim wordmark glyph: left leg one color, the
+	# top bridge + right leg the other. Transcribed from font/n-neovim.gif.
+	# Their actual colors there are cyan #A6E1E2 (left leg) and green
+	# #B8E1C1 (bridge+right leg) — not the MINI./VIM blue or tan.
+	# e.g.: heroglyph -o logo.png "mini.:#B3DAF9" "n:#A6E1E2,#B8E1C1" "vim:#D9D8AA"
+	style["n",1] = "1100"
+	style["n",2] = "0010"
+	style["n",3] = "0010"
+	style["n",4] = "0010"
+	style["n",5] = "0010"
+
+	n = length(text)
+	for (r = 0; r < 7; r++) {
+		line = ""
+		for (i = 1; i <= n; i++) {
+			ch = substr(text, i, 1)
+			row = get(ch, r)
+			if (mode == "text") {
+				w = length(row)
+				for (c = 1; c <= w; c++) {
+					bit = substr(row, c, 1)
+					line = line (bit == "1" ? "█" : " ")
+				}
+			} else if (mode == "grid3") {
+				# 3-level grid for a styled glyph: '0'=background,
+				# '1'=color1 (style bit 0), '2'=color2 (style bit 1).
+				srow = get_style(ch, r)
+				w = length(row)
+				out = ""
+				for (c = 1; c <= w; c++) {
+					fbit = substr(row, c, 1)
+					sbit = substr(srow, c, 1)
+					out = out (fbit != "1" ? "0" : (sbit == "1" ? "2" : "1"))
+				}
+				line = line out
+			} else {
+				line = line row
+			}
+		}
+		print line
+	}
+}
+AWKEOF
+)
+
+render() {
+	# $1 = lowercased text, $2 = mode (grid|text)
+	printf '%s' "$AWKPROG" | awk -v text="$1" -v mode="$2" -f -
+}
+
+# builds one PNG at $1, from "$@" (the TEXT[:COLOR] args) using the currently
+# set bg/fg/a1/a2.
+build_png() {
+	out="$1"
+	shift
+	tmpdir=$(mktemp -d)
+	trap 'rm -rf "$tmpdir"' EXIT
+
+	first=true
+	for seg in "$@"; do
+		t="${seg%%:*}"
+		case "$seg" in
+		*:*) color="${seg#*:}" ;;
+		*) color="$fg" ;;
+		esac
+		case "$color" in
+		accent) color="$a1,$a2" ;;
+		accent1) color="$a1" ;;
+		accent2) color="$a2" ;;
+		esac
+		t_lower=$(printf '%s' "$t" | tr 'A-Z' 'a-z')
+		png="$tmpdir/seg.png"
+		color2=""
+
+		case "$color" in
+		*,*)
+			# TEXT:COLOR1,COLOR2 — 2-color styled glyph. Only meaningful for
+			# a single letter that has a `style[]` entry (see AWKPROG);
+			# anything else falls back to plain COLOR1 below.
+			color1="${color%%,*}"
+			color2="${color#*,}"
+			;;
+		*) color1="$color" ;;
+		esac
+
+		if [ -n "${color2:-}" ] && [ "${#t_lower}" -eq 1 ]; then
+			grid3=$(render "$t_lower" grid3)
+			width=$(printf '%s\n' "$grid3" | head -n 1 | awk '{ print length }')
+			pgm="$tmpdir/seg.pgm"
+			{
+				printf 'P2\n%s 7\n255\n' "$width"
+				printf '%s\n' "$grid3" | awk '{
+					out = ""
+					for (i = 1; i <= length($0); i++) {
+						d = substr($0, i, 1)
+						out = out (d == "0" ? "0" : d == "1" ? "128" : "255") " "
+					}
+					print out
+				}'
+			} >"$pgm"
+			clut3="$tmpdir/clut3.png"
+			magick xc:"$bg" xc:"$color1" xc:"$color2" +append "$clut3"
+			magick "$pgm" -colorspace sRGB "$clut3" -clut "$png"
+		else
+			grid=$(render "$t_lower" grid)
+			width=$(printf '%s\n' "$grid" | head -n 1 | awk '{ print length }')
+			pbm="$tmpdir/seg.pbm"
+			{
+				printf 'P1\n%s 7\n' "$width"
+				printf '%s\n' "$grid"
+			} >"$pbm"
+			# -opaque collapses to grayscale on a bilevel-origin image in some
+			# ImageMagick builds (loses the fill color); a 2-stop CLUT keeps true RGB.
+			magick "$pbm" -colorspace sRGB \( -size 1x2 "gradient:$color1-$bg" \) -clut "$png"
+		fi
+		if $first; then
+			cp "$png" "$tmpdir/acc.png"
+			first=false
+		else
+			magick "$tmpdir/acc.png" "$png" -background "$bg" +append "$tmpdir/acc_next.png"
+			mv "$tmpdir/acc_next.png" "$tmpdir/acc.png"
+		fi
+	done
+
+	acc_width=$(magick identify -format '%w' "$tmpdir/acc.png")
+	# every glyph carries its own trailing blank column, so the right edge
+	# already has a 1px margin — the left edge doesn't, since nothing precedes
+	# the first glyph. Pad the canvas 1px on the left only (anchor East).
+	magick "$tmpdir/acc.png" -gravity East -background "$bg" -extent "$((acc_width + 1))x7" "$tmpdir/acc_padded.png"
+	magick "$tmpdir/acc_padded.png" -filter point -resize "${scale}00%" "$out"
+	rm -rf "$tmpdir"
+	trap - EXIT
+	echo "$out"
+}
+
+outfile=""
+env_palette="" env_bg="" env_fg="" env_a1="" env_a2="" env_mode=""
+cli_palette="" cli_bg="" cli_light=false
+all_palettes=false
+scale=15
+
+# .env in the current directory, read (never executed) for defaults.
+if [ -f .env ]; then
+	while IFS='=' read -r k v; do
+		case "$k" in
+		HEROGLYPH_PALETTE) env_palette="$v" ;;
+		HEROGLYPH_MODE) env_mode="$v" ;;
+		HEROGLYPH_BG) env_bg="$v" ;;
+		HEROGLYPH_FG) env_fg="$v" ;;
+		HEROGLYPH_ACCENT1) env_a1="$v" ;;
+		HEROGLYPH_ACCENT2) env_a2="$v" ;;
+		esac
+	done <.env
+fi
+
+while getopts "o:p:lPb:s:h" opt; do
+	case "$opt" in
+	o) outfile="$OPTARG" ;;
+	p) cli_palette="$OPTARG" ;;
+	l) cli_light=true ;;
+	P) all_palettes=true ;;
+	b) cli_bg="$OPTARG" ;;
+	s) scale="$OPTARG" ;;
+	h)
+		usage
+		exit 0
+		;;
+	*)
+		usage
+		exit 1
+		;;
+	esac
+done
+shift $((OPTIND - 1))
+
+if $cli_light; then
+	mode="light"
+else
+	case "$env_mode" in
+	light) mode="light" ;;
+	*) mode="dark" ;;
+	esac
+fi
+
+[ $# -ge 1 ] || {
+	usage
+	exit 1
+}
+
+if [ -z "$outfile" ]; then
+	words=""
+	for seg in "$@"; do
+		t="${seg%%:*}"
+		words="$words $t"
+	done
+	text_lower=$(printf '%s' "${words# }" | tr 'A-Z' 'a-z')
+	render "$text_lower" text
+	exit 0
+fi
+
+command -v magick >/dev/null 2>&1 || {
+	echo "heroglyph: -o needs ImageMagick's 'magick' on PATH" >&2
+	exit 1
+}
+
+if $all_palettes; then
+	base="${outfile%.*}"
+	ext="${outfile##*.}"
+	for name in mini spring summer autumn; do
+		resolve_palette "$name" "$mode"
+		bg="$base_bg" fg="$base_fg" a1="$base_a1" a2="$base_a2"
+		suffix="$name"
+		[ "$mode" = "light" ] && suffix="$name-light"
+		build_png "$base-$suffix.$ext" "$@"
+	done
+	exit 0
+fi
+
+resolve_palette "${cli_palette:-${env_palette:-summer}}" "$mode"
+if [ -n "$cli_palette" ]; then
+	# an explicit -p wins clean over any individual .env override — only an
+	# explicit -b on top of it can still adjust the background.
+	fg="$base_fg" a1="$base_a1" a2="$base_a2"
+	bg="${cli_bg:-$base_bg}"
+else
+	fg="${env_fg:-$base_fg}"
+	a1="${env_a1:-$base_a1}"
+	a2="${env_a2:-$base_a2}"
+	bg="${cli_bg:-${env_bg:-$base_bg}}"
+fi
+build_png "$outfile" "$@"

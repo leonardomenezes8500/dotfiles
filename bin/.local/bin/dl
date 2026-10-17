@@ -1,0 +1,209 @@
+#!/usr/bin/env bash
+# Usage: dl [URL] [video|preview|mp3|aac|live] [minutes_per_chunk=10]
+# With no URL, opens $EDITOR (one link per line) and downloads each. Saves in the current dir.
+# Playlist links (youtube playlist?list=, soundcloud /sets/) create a folder, items numbered 001, 002...
+# Names: "<IG|TK|FB|YT|TW> <title or page name> [id].ext" (IG/TK/TW use the page name)
+#   video   : best quality, h264 + aac (mp4)
+#   post    : every image/video of a post (carousel, photo post) into a folder (gallery-dl)
+#   preview : small h264/aac mp4 (<16MB, 720p/480p/360p by length) so WhatsApp sends it as a normal video
+#   mp3     : audio only, mp3
+#   aac     : audio only, original aac (m4a, no re-encode)
+#   live    : live from the start, in chunks 0001.mp4, 0002.mp4... (h264/aac, no re-encode)
+#   cookies : show cookie status
+# shortcut: video is limited to the best h264 (1080p on YouTube); live cuts on keyframes (~1-2s error per chunk);
+#           preview aims at 14.5MB, so a very long video (>~1h) gets very low quality.
+set -u
+DOCS="$HOME/Documents"
+URL=${1:-}; MODE=${2:-}; MIN=${3:-10}
+WA_MB=14.5   # preview target size in MB (WhatsApp limit is 16MB)
+
+# One line per cookie file. $1=file $2=regex of login cookies. Returns 1 if old, expiring or bad.
+ck_status() {
+  local f=$1 re=$2 now age exp left
+  [ -f "$f" ] || { echo "MISSING  $f"; return 1; }
+  now=$(date +%s); age=$(( (now - $(stat -c %Y "$f")) / 86400 ))
+  exp=$(awk -F'\t' -v re="$re" '$6 ~ re && $5 > 0 && (m == "" || $5 < m) {m=$5} END{print m}' "$f")
+  [ -n "$exp" ] || { echo "NO LOGIN  $(basename "$f"): no login cookie ($re)"; return 1; }
+  left=$(( (exp - now) / 86400 ))
+  [ "$left" -lt 0 ] && { echo "EXPIRED  $(basename "$f"): expired $((-left)) days ago"; return 1; }
+  echo "ok  $(basename "$f"): file is $age days old, login expires in $left days"
+  [ "$age" -le 14 ] && [ "$left" -ge 7 ]   # old (>14 days) or about to expire -> 1 -> warning
+}
+
+if [ "$URL" = cookies ] || [ "$URL" = --cookies ]; then
+  ck_status "$DOCS/www.youtube.com_cookies.txt" '^__Secure-(3PSID|1PSIDTS|3PSIDTS)$'
+  echo "  (YouTube rotates these cookies: an old file can fail before it 'expires'. If it fails, export again.)"
+  ck_status "$DOCS/www.instagram.com_cookies.txt" '^sessionid$'
+  if curl -s -o /dev/null -w '%{http_code}' -b "$DOCS/www.instagram.com_cookies.txt" -A 'Mozilla/5.0' \
+       https://www.instagram.com/accounts/edit/ | grep -q 200; then
+    echo "ok  instagram: login confirmed by the server"
+  else
+    echo "FAILED  instagram: server does not recognize the login, export the cookies again"
+  fi
+  exit 0
+fi
+
+pick_mode() {
+  printf '%s\n' \
+    "video    - best quality, h264/aac (mp4)" \
+    "preview  - small mp4 (<16MB) for WhatsApp" \
+    "post     - all images+videos of a post (carousel) in a folder" \
+    "mp3      - audio only, mp3" \
+    "aac      - audio only, aac (m4a)" \
+    "live     - live in N-minute chunks, from the start" \
+    | fzf --prompt="dl> " --height=10 --reverse | awk '{print $1}'
+}
+pick_min() { printf '%s\n' 5 10 15 20 30 60 | fzf --prompt="minutes per chunk> " --height=10 --reverse; }
+
+# No link on the command line: open $EDITOR, one link per line (# = comment), download each
+if [ -z "$URL" ]; then
+  F=$(mktemp /tmp/dl_links.XXXXXX)
+  printf '# one link per line; lines starting with # are ignored. Save and quit to download.\n\n' > "$F"
+  ED=${VISUAL:-${EDITOR:-nvim}}
+  case "$(basename "${ED%% *}")" in vi|vim|nvim) $ED + "$F" ;; *) $ED "$F" ;; esac   # + = cursor on the last (empty) line
+  mapfile -t LINKS < <(grep -vE '^\s*(#|$)' "$F" | sed 's/^\s*//; s/\s*$//'); rm -f "$F"
+  [ ${#LINKS[@]} -gt 0 ] || { echo "no links"; exit 1; }
+  MODE=$(pick_mode); [ -n "$MODE" ] || exit 1
+  [ "$MODE" = live ] && { MIN=$(pick_min) || exit 1; }
+  n=0; for u in "${LINKS[@]}"; do n=$((n+1)); echo "[$n/${#LINKS[@]}] $u"; "$0" "$u" "$MODE" "$MIN"; done
+  exit 0
+fi
+
+[ -n "$MODE" ] || MODE=$(pick_mode)
+[ -n "$MODE" ] || exit 1
+if [ "$MODE" = live ] && [ $# -lt 3 ]; then MIN=$(pick_min) || exit 1; fi
+
+# cookies by site
+case "$URL" in
+  *instagram.com*) CK="$DOCS/www.instagram.com_cookies.txt"; RE='^sessionid$' ;;
+  *)               CK="$DOCS/www.youtube.com_cookies.txt";   RE='^__Secure-(3PSID|1PSIDTS|3PSIDTS)$' ;;
+esac
+[ -n "${DL_CHILD:-}" ] || ck_status "$CK" "$RE" >/dev/null || echo "cookie warning: $(ck_status "$CK" "$RE") -> run 'dl cookies'"
+
+# file name: "<SITE> <title or page name> [id]"; IG/TikTok/X have no real title, so they use the page name
+case "$URL" in
+  *instagram.com*)            PFX=IG F='channel,uploader' ;;
+  *tiktok.com*)               PFX=TK F='uploader,channel' ;;
+  *facebook.com*|*fb.watch*)  PFX=FB F='title,uploader' ;;
+  *youtube.com*|*youtu.be*)   PFX=YT F='title' ;;
+  *://x.com/*|*://www.x.com/*|*twitter.com*) PFX=TW F='uploader_id,uploader' ;;
+  *)                          PFX='%(extractor_key)s' F='title,uploader' ;;
+esac
+NAMEFMT="${DL_PREFIX:-}$PFX %($F)s [%(id)s]"
+
+# -q: errors only; our own progress (one line: % ETA speed)
+YT=(yt-dlp --no-playlist -q --no-warnings --progress --newline
+    --progress-template 'P %(progress._percent_str)s|%(progress._eta_str)s|%(progress._speed_str)s')
+[ -f "$CK" ] && YT+=(--cookies "$CK")
+# yt-dlp output filter: progress lines become one line; the rest (errors, final path) passes through
+prog() { awk -F'|' '/^P /{sub(/^P /,""); gsub(/Unknown( B\/s)?|NA/,"--"); printf "\r  %s  ETA %s  %s   ", $1,$2,$3; next} {print "\n" $0}'; echo; }
+
+dur() { ffprobe -v error -show_entries format=duration -of csv=p=0 "$1" 2>/dev/null | cut -d. -f1; }
+
+# post: gallery-dl, one folder per post, files 01, 02... ($1=url)
+do_post() {
+  local dirfmt=""
+  case "$1" in
+    *instagram.com*)           dirfmt='IG {username} [{post_shortcode}]' ;;
+    *tiktok.com*)              dirfmt='TK {user|username} [{id}]' ;;
+    *://x.com/*|*://www.x.com/*|*twitter.com*) dirfmt='TW {author[name]} [{tweet_id}]' ;;
+    *facebook.com*|*fb.watch*) dirfmt='FB {username|user|uploader} [{post_id|set_id|id}]' ;;
+  esac
+  local args=(gallery-dl -d "$PWD" -o 'filename={num:>02}.{extension}')
+  [ -f "$CK" ] && args+=(--cookies "$CK")
+  [ -n "$dirfmt" ] && args+=(-o "directory=[\"$dirfmt\"]")
+  "${args[@]}" "$1"
+}
+
+# playlist link: make a folder and run this same script for each item, numbered
+if [ "$MODE" != post ] && [ -z "${DL_CHILD:-}" ]; then
+  case "$URL" in
+    *playlist\?list=*|*/sets/*)
+      PL=(yt-dlp -q --no-warnings --flat-playlist); [ -f "$CK" ] && PL+=(--cookies "$CK")
+      DIR=$("${PL[@]}" -I1 --print "$PFX %(playlist_title)s [%(playlist_id)s]" "$URL" | head -1 | tr '/' '_')
+      mapfile -t ITEMS < <("${PL[@]}" --print url "$URL")
+      [ ${#ITEMS[@]} -gt 0 ] || { echo "empty or private playlist"; exit 1; }
+      mkdir -p "$DIR" && cd "$DIR" || exit 1
+      echo "playlist: $DIR (${#ITEMS[@]} items)"
+      n=0; for u in "${ITEMS[@]}"; do
+        n=$((n+1)); echo "[$n/${#ITEMS[@]}]"
+        DL_CHILD=1 DL_PREFIX=$(printf '%03d ' $n) "$0" "$u" "$MODE" "$MIN"
+      done
+      exit 0 ;;
+  esac
+fi
+
+case "$MODE" in
+  post) do_post "$URL" ;;
+  video)
+    "${YT[@]}" -f 'bv*[vcodec^=avc1]+ba[ext=m4a]/b[vcodec^=avc1]/b' --merge-output-format mp4 \
+      -o "$NAMEFMT.%(ext)s" --print after_move:"saved: %(filepath)s" "$URL" 2>&1 | prog
+    # no video in the post (images/carousel): try gallery-dl
+    if [ "${PIPESTATUS[0]}" -ne 0 ]; then echo "no video found, trying images (post mode)"; do_post "$URL"; fi ;;
+  mp3)
+    "${YT[@]}" -x --audio-format mp3 --audio-quality 0 -o "$NAMEFMT.%(ext)s" \
+      --print after_move:"saved: %(filepath)s" "$URL" 2>&1 | prog ;;
+  aac)
+    "${YT[@]}" -f 'ba[ext=m4a]/ba' -x --audio-format m4a -o "$NAMEFMT.%(ext)s" \
+      --print after_move:"saved: %(filepath)s" "$URL" 2>&1 | prog ;;
+  preview)
+    D=$(mktemp -d /tmp/dl_prev.XXXXXX)
+    # source up to 720p is enough: downloads fast and the re-encode is quick
+    "${YT[@]}" -f 'bv*[height<=720][vcodec^=avc1]+ba[ext=m4a]/b[height<=720]/b' --merge-output-format mp4 \
+      --print-to-file "$NAMEFMT" "$D/name" -o "$D/src.%(ext)s" "$URL" 2>&1 | prog
+    SRC=$(ls "$D"/src.* 2>/dev/null | head -1); [ -n "$SRC" ] || { echo "download failed"; rm -rf "$D"; exit 1; }
+    NAME=$(head -1 "$D/name" | tr '/' '_'); OUTF="$PWD/$NAME preview.mp4"
+    S=$(dur "$SRC"); [ -n "$S" ] && [ "$S" -gt 0 ] || { echo "could not read duration"; exit 1; }
+    # video kbps = target size / duration - audio(64k) - container overhead; scale height by bitrate
+    VK=$(awk -v mb=$WA_MB -v s="$S" 'BEGIN{v=mb*8192/s-64-3; if(v>2500)v=2500; if(v<60)v=60; printf "%d", v}')
+    for try in 1 2; do
+      H=360; [ "$VK" -ge 450 ] && H=480; [ "$VK" -ge 1200 ] && H=720
+      [ "$VK" -lt 150 ] && echo "  warning: video is long, preview quality will be low"
+      ffmpeg -hide_banner -loglevel error -y -i "$SRC" -vf "scale=-2:'min($H,ih)',fps=30" \
+        -c:v libx264 -preset medium -profile:v main -pix_fmt yuv420p -b:v ${VK}k -maxrate $((VK*3/2))k -bufsize $((VK*3))k \
+        -c:a aac -b:a 64k -ac 2 -movflags +faststart -progress pipe:1 -nostats "$OUTF" 2>&1 \
+        | awk -F= -v s="$S" '/^out_time_us=/{p=$2/1000000/s*100; if(p>100)p=100; printf "\r  encoding %5.1f%%   ", p} /rror/{print "\n" $0}'
+      echo
+      SZ=$(stat -c %s "$OUTF" 2>/dev/null || echo 0)
+      [ "$SZ" -le 16000000 ] && break
+      VK=$((VK*80/100))   # came out above 16MB: retry once with less bitrate
+    done
+    echo "saved: $OUTF ($((SZ/1048576)) MB, ${H}p)"
+    [ "$SZ" -le 16000000 ] || echo "  warning: still above 16MB, WhatsApp will send it as a document"
+    rm -rf "$D" ;;
+  live)
+    OUT="$PWD/$("${YT[@]}" --print "$NAMEFMT" "$URL" 2>/dev/null | head -1 | tr '/' '_') live"
+    mkdir -p "$OUT"
+    BLK=$((MIN*60))
+    D=$(mktemp -d /tmp/live_dl.XXXXXX)   # native WSL disk: /mnt/z locks files in use
+    V=$D/live.f137.mkv.part; A=$D/live.f140.mkv.part
+    cut_chunks() { # complete chunks; "final" also cuts the remainder
+      [ -f "$V" ] && [ -f "$A" ] || return 0
+      local dv da d n total f
+      dv=$(dur "$V"); da=$(dur "$A"); [ -n "$dv" ] && [ -n "$da" ] || return 0
+      d=$(( dv < da ? dv : da )); total=$(( d / BLK ))
+      [ "${1:-}" = final ] && [ $((d % BLK)) -gt 5 ] && total=$((total+1))
+      for ((n=1; n<=total; n++)); do
+        f=$(printf '%s/%04d.mp4' "$OUT" $n)
+        [ -s "$f" ] && continue
+        ffmpeg -hide_banner -loglevel error -y -ss $(((n-1)*BLK)) -i "$V" -ss $(((n-1)*BLK)) -i "$A" -t $BLK \
+          -map 0:v:0 -map 1:a:0 -c copy -movflags +faststart "$f" && echo "[ok] $(basename "$f")"
+      done
+    }
+    "${YT[@]}" --live-from-start -f '137+140/bv*[vcodec^=avc1]+ba[ext=m4a]' --merge-output-format mkv \
+      --retries infinite --fragment-retries infinite -o "$D/live.%(ext)s" "$URL" > "$D/ytdlp.log" 2>&1 &
+    YP=$!
+    echo "downloading to $OUT ($MIN-minute chunks). Ctrl+C to stop."
+    i=0
+    while kill -0 $YP 2>/dev/null; do
+      sleep 5; i=$((i+1)); [ $((i % 6)) -eq 0 ] && cut_chunks
+      d=$(dur "$V"); d=${d:-0}
+      printf '\r  downloaded %02d:%02d:%02d | chunks ready: %d   ' $((d/3600)) $((d%3600/60)) $((d%60)) "$(ls "$OUT"/*.mp4 2>/dev/null | wc -l)"
+    done
+    echo
+    wait $YP
+    [ -f "$D/live.mkv" ] && V=$D/live.mkv A=$D/live.mkv   # at the end yt-dlp merges everything into one file
+    cut_chunks final
+    echo "DONE. Temp files in $D (delete once you checked the chunks)" ;;
+  *) echo "invalid mode: $MODE (video|preview|post|mp3|aac|live)"; exit 1 ;;
+esac

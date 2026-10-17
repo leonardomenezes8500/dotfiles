@@ -1,5 +1,5 @@
 # Local files and secrets never go in
-*.local
+*?.local
 .env
 .env.*
 .envrc

@@ -1,29 +1,23 @@
 # dotfiles: rules for Claude
 
-**Public repo**: above all, never push sensitive information to GitHub. Claude runs stow; the user just asks ("add X's config to dotfiles", "set up a new machine").
+**Public repo**: above all, never push sensitive information to GitHub.
+The user just asks; Claude does the work. "install", "setup", "set up my machine" means: dotfiles + programs + skills, i.e. run `./install.sh` (re-runnable).
 
 ## Layout
-- Each top-level dir is a stow package mirroring `~` (e.g. `nvim/.config/nvim/init.lua` → `~/.config/nvim/init.lua`).
-- `.stowrc` sets `--target=~ --no-folding`. Always run `stow` from the repo root.
-- `--no-folding` is required: without it stow links whole dirs and plugins/caches (tpm, etc.) end up inside the repo.
+- `install.sh`: the whole setup. Lists in it: `PKGS` (stow packages), `PLUGINS` (Claude marketplaces); uv tools, npm globals and skills are plain lines.
+- `pacman.txt`: explicit pacman packages. Refresh with `pacman -Qqe | grep -vx base > pacman.txt`.
+- Every top-level dir is a stow package mirroring `~`. `.stowrc` sets `--target=~ --no-folding` (required, or plugins/caches land in the repo). Run stow from the repo root.
 
-## Commands
-- Dry run first: `stow -n -v <pkg>`
-- Link: `stow -v <pkg>` · Relink after adding a file: `stow -R -v <pkg>` · Unlink: `stow -D -v <pkg>`
-- Check: `ls -la ~/<file>` should point into the repo.
-
-## Adding a config
-1. Read the whole file and strip anything sensitive or machine-specific (see below).
-2. Create it at the mirrored path in the repo, delete the original (git is the backup), then `stow -v <pkg>`.
-3. Never use `--adopt` (it overwrites the repo with the home file, unreviewed).
-4. Keep the README minimal: only update the package list in the `stow ...` line.
+## Changes
+- New config: read it all, strip secrets/machine-only bits, put it at the mirrored path, delete the original (git is the backup), `stow -v <pkg>`. Never `--adopt`.
+- New program/tool/skill: add its line to `install.sh` (or `pacman.txt`), keep each step idempotent.
+- New stow package: add it to `PKGS`.
 
 ## Never in the repo
-- Tokens, keys, passwords, `~/.ssh/*` (including `config`: hosts/IPs), `~/.config/gh/hosts.yml`, shell history, `.claude.json`.
-- Machine-specific stuff (paths, tmux sessions, hosts) → `~/.bashrc.local`.
-- Project env vars → direnv: `.envrc` loads them, values live in `.env` (blocked by the global ignore).
-- Name and email in the git config are fine (already public in commits).
+- Tokens, keys, passwords, `~/.ssh/*` (incl. `config`), `~/.config/gh/hosts.yml`, shell history, `~/.claude.json`, `~/.claude/CLAUDE.md` (has server details), the paid motion-video-director skill.
+- Machine-only stuff → `~/.bashrc.local`. Project env vars → direnv (`.env`, globally ignored).
+- Name and email in the git config are fine.
 
 ## Consistency
-- Everything in English: comments, commit messages, docs.
-- Before every commit: `git diff --cached` + `git grep -nIiE '(token|secret|passw|api[_-]?key|BEGIN .*PRIVATE|gh[pousr]_|sk-)'` and review every hit.
+- Everything in English: comments, commit messages, docs. README stays minimal.
+- Before every commit: `git diff --cached` + `git grep -nIiE '(token|secret|passw|api[_-]?key|BEGIN .*PRIVATE|gh[pousr]_|sk-)'`, review every hit.
