@@ -16,5 +16,8 @@ if [[ $(tmux display -p -t "$exec_pane" '#{pane_current_command}') != claude ]];
   tmux send-keys -t "$exec_pane" "cd '$dir' && claude --model opus --effort high" Enter
 fi
 
+# One nag watcher per director pane: popup on Windows while nobody is working.
+pgrep -f "setup8500-nag $me " >/dev/null || setsid setup8500-nag "$me" "$exec_pane" >/dev/null 2>&1 < /dev/null &
+
 if [[ ${1:-} == --setup ]]; then echo "$exec_pane"; exit 0; fi
 exec claude --model sonnet --effort medium

@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Started by setup8500. While the director AND the executor are both idle, nobody is working: the project is
+# waiting on the user, so pop a Windows alert (avisar) every NAG_EVERY seconds until one of them works again.
+# Usage: setup8500-nag <director-pane> <executor-pane>     Mute for this window: tmux set -w @nag off
+set -u
+dir_pane=$1 exec_pane=$2
+every=${NAG_EVERY:-300} poll=${NAG_POLL:-30}
+name=$(tmux display -p -t "$dir_pane" '#{window_name}' 2>/dev/null)
+
+# Claude Code shows "Verb… (12s ·" or "(3m 4s ·" while working (same check as setup8500-monitor).
+working() { tmux capture-pane -p -t "$1" 2>/dev/null | sed '/^[[:space:]]*$/d' | tail -n 25 | grep -qE '…[[:space:]]*\(([0-9]+m[[:space:]]*)?[0-9]+s'; }
+
+idle=0
+while tmux list-panes -a -F '#{pane_id}' | grep -qxF "$dir_pane"; do # exit when the director pane is gone
+  if working "$dir_pane" || working "$exec_pane"; then
+    idle=0
+  else
+    idle=$((idle + poll))
+    if ((idle >= every)); then
+      idle=0
+      [[ $(tmux show -wv -t "$dir_pane" @nag 2>/dev/null) == off ]] ||
+        avisar "Diretor e executor parados: o $name está esperando você." "${name^} — esperando você"
+    fi
+  fi
+  sleep "$poll"
+done
