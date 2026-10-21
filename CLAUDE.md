@@ -16,6 +16,7 @@ The user just asks; Claude does the work. "install", "setup", "set up my machine
 
 ## Never in the repo
 - Tokens, keys, passwords, `~/.ssh/*` (incl. `config`), `~/.config/gh/hosts.yml`, shell history, `~/.claude.json`, `~/.claude/CLAUDE.md` (has server details), the paid motion-video-director skill.
+- Anything about the user's private projects: project/repo names, stores or clients, domains, IPs, hosts, server users, project paths. Not in files, commands or messages either.
 - Machine-only stuff → `~/.bashrc.local`. Project env vars → direnv (`.env`, globally ignored).
 - Name and email in the git config are fine.
 
