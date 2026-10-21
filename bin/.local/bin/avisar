@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# avisar "message" ["title"] - topmost Windows popup from WSL, so the user looks at the terminal. Does not block.
+set -eu  # Windows PATH is not appended in this WSL, so powershell is called by full path
+msg=${1:?usage: avisar "message" ["title"]}
+title=${2:-Claude precisa de você}
+# Single quotes doubled for PowerShell string literals.
+m=${msg//\'/\'\'}; t=${title//\'/\'\'}
+setsid /mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -WindowStyle Hidden -Command \
+  "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show('$m', '$t', 'OK', 'Warning', 'Button1', 'ServiceNotification') | Out-Null" \
+  >/dev/null 2>&1 < /dev/null &
