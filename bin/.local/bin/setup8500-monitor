@@ -42,7 +42,8 @@ while true; do
   else
     idle_polls=$((idle_polls + 1))
     if [[ $idle_polls -eq 3 && $state != idle ]]; then
-      echo "⏸ executor parou (ctx ${ctx:-?}%, ${cost:-?})"; state=idle
+      # Exit so an idle executor costs the director nothing; re-arm with the next task.
+      echo "⏸ executor parou (ctx ${ctx:-?}%, ${cost:-?})"; exit 0
     fi
   fi
   sleep "$interval"
