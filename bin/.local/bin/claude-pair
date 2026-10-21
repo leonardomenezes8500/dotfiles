@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Director/executor pair in tmux: executor (Opus high) in the pane below, director (Sonnet medium) here.
+# Usage: claude-pair            -> set up executor, then start the director in this pane
+#        claude-pair --setup    -> only make sure the executor is running; print its pane id
+set -eu
+[[ -n ${TMUX_PANE:-} ]] || { echo "claude-pair: run inside tmux" >&2; exit 1; }
+me=$TMUX_PANE
+dir=$(tmux display -p -t "$me" '#{pane_current_path}')
+win=$(tmux display -p -t "$me" '#{session_name}:#{window_index}')
+
+# Executor = the lowest other pane in this window; create one if missing.
+exec_pane=$(tmux list-panes -t "$win" -F '#{pane_top} #{pane_id}' | sort -n | awk -v me="$me" '$2!=me {p=$2} END{print p}')
+[[ -n $exec_pane ]] || exec_pane=$(tmux split-window -v -d -l 60% -t "$me" -c "$dir" -P -F '#{pane_id}')
+
+if [[ $(tmux display -p -t "$exec_pane" '#{pane_current_command}') != claude ]]; then
+  tmux send-keys -t "$exec_pane" "cd '$dir' && claude --model opus --effort high" Enter
+fi
+
+if [[ ${1:-} == --setup ]]; then echo "$exec_pane"; exit 0; fi
+exec claude --model sonnet --effort medium

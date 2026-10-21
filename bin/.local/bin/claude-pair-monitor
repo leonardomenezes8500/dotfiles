@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Watch the executor pane; print one short line per event (for the director's Monitor tool).
+# Usage: claude-pair-monitor <executor-pane> [repo-dir]   (repo defaults to the pane's cwd)
+# Events: new commit, executor stopped (with ctx/cost), asking for input, context getting full.
+set -u
+pane=$1
+repo=${2:-$(tmux display -p -t "$pane" '#{pane_current_path}' 2>/dev/null || pwd)}
+interval=${MONITOR_INTERVAL:-15}
+ctx_warn=${MONITOR_CTX_WARN:-60}
+
+head_of() { git -C "$repo" rev-parse -q --verify HEAD 2>/dev/null || echo none; }
+last=$(head_of); state=unknown; idle_polls=0; warned=0
+
+while true; do
+  if ! screen=$(tmux capture-pane -p -t "$pane" 2>/dev/null); then
+    echo "✖ pane $pane sumiu"; exit 1
+  fi
+  tailtxt=$(tail -n 25 <<<"$screen")
+  # Status line looks like "Opus 5.5 (high) | ctx 15% | $2.12 | ~/code/x".
+  ctx=$(grep -oE 'ctx [0-9]+%' <<<"$tailtxt" | tail -1 | tr -dc 0-9)
+  cost=$(grep -oE '\| \$[0-9.]+' <<<"$tailtxt" | tail -1 | tr -d '| ')
+
+  head=$(head_of)
+  if [[ $head != "$last" ]]; then
+    range=$([[ $last == none ]] && echo "$head" || echo "$last..$head")
+    git -C "$repo" log --reverse --format='✔ %s' "$range" 2>/dev/null
+    last=$head
+  fi
+
+  if [[ -n $ctx && $ctx -ge $ctx_warn && $warned -eq 0 ]]; then
+    echo "⚠ contexto do executor em ${ctx}%"; warned=1
+  elif [[ -n $ctx && $ctx -lt $ctx_warn ]]; then
+    warned=0 # reset after /clear
+  fi
+
+  # Claude Code shows "Verb… (12s ·" or "(3m 4s ·" while working.
+  if grep -qE '(Do you want to|Would you like to|❯ 1\.|Esc to cancel)' <<<"$tailtxt"; then
+    [[ $state != input ]] && echo "❓ executor esperando resposta"
+    state=input; idle_polls=0
+  elif grep -qE '…[[:space:]]*\(([0-9]+m[[:space:]]*)?[0-9]+s' <<<"$tailtxt"; then
+    state=working; idle_polls=0
+  else
+    idle_polls=$((idle_polls + 1))
+    if [[ $idle_polls -eq 3 && $state != idle ]]; then
+      echo "⏸ executor parou (ctx ${ctx:-?}%, ${cost:-?})"; state=idle
+    fi
+  fi
+  sleep "$interval"
+done
