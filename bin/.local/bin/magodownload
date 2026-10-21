@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Usage: dl [URL] [video|preview|mp3|aac|live] [minutes_per_chunk=10]
+# Usage: magodownload [URL] [video|preview|mp3|aac|live|clip] [minutes_per_chunk=10 | clip range]
 # With no URL, opens $EDITOR (one link per line) and downloads each. Saves in the current dir.
 # Playlist links (youtube playlist?list=, soundcloud /sets/) create a folder, items numbered 001, 002...
 # Names: "<IG|TK|FB|YT|TW> <title or page name> [id].ext" (IG/TK/TW use the page name)
@@ -9,12 +9,15 @@
 #   mp3     : audio only, mp3
 #   aac     : audio only, original aac (m4a, no re-encode)
 #   live    : live from the start, in chunks 0001.mp4, 0002.mp4... (h264/aac, no re-encode)
+#   clip    : only a time range, e.g. "magodownload URL clip 1:20:50-1:25:03" (best h264/aac, exact cut, re-encoded)
+#             also works on a live that just ended or is still on (downloads only the fragments of that range)
 #   cookies : show cookie status
 # shortcut: video is limited to the best h264 (1080p on YouTube); live cuts on keyframes (~1-2s error per chunk);
 #           preview aims at 14.5MB, so a very long video (>~1h) gets very low quality.
 set -u
 DOCS="$HOME/Documents"
 URL=${1:-}; MODE=${2:-}; MIN=${3:-10}
+[ "$MODE" = clip ] && RANGE=${3:-}
 WA_MB=14.5   # preview target size in MB (WhatsApp limit is 16MB)
 
 # One line per cookie file. $1=file $2=regex of login cookies. Returns 1 if old, expiring or bad.
@@ -51,9 +54,11 @@ pick_mode() {
     "mp3      - audio only, mp3" \
     "aac      - audio only, aac (m4a)" \
     "live     - live in N-minute chunks, from the start" \
-    | fzf --prompt="dl> " --height=10 --reverse | awk '{print $1}'
+    "clip     - only a time range (start-end)" \
+    | fzf --prompt="magodownload> " --height=10 --reverse | awk '{print $1}'
 }
 pick_min() { printf '%s\n' 5 10 15 20 30 60 | fzf --prompt="minutes per chunk> " --height=10 --reverse; }
+pick_range() { local r; read -rp "range (e.g. 1:20:50-1:25:03): " r </dev/tty; echo "$r"; }
 
 # No link on the command line: open $EDITOR, one link per line (# = comment), download each
 if [ -z "$URL" ]; then
@@ -65,20 +70,25 @@ if [ -z "$URL" ]; then
   [ ${#LINKS[@]} -gt 0 ] || { echo "no links"; exit 1; }
   MODE=$(pick_mode); [ -n "$MODE" ] || exit 1
   [ "$MODE" = live ] && { MIN=$(pick_min) || exit 1; }
-  n=0; for u in "${LINKS[@]}"; do n=$((n+1)); echo "[$n/${#LINKS[@]}] $u"; "$0" "$u" "$MODE" "$MIN"; done
+  # clip: one range per link
+  n=0; for u in "${LINKS[@]}"; do
+    n=$((n+1)); echo "[$n/${#LINKS[@]}] $u"
+    if [ "$MODE" = clip ]; then "$0" "$u" clip "$(pick_range)"; else "$0" "$u" "$MODE" "$MIN"; fi
+  done
   exit 0
 fi
 
 [ -n "$MODE" ] || MODE=$(pick_mode)
 [ -n "$MODE" ] || exit 1
 if [ "$MODE" = live ] && [ $# -lt 3 ]; then MIN=$(pick_min) || exit 1; fi
+[ "$MODE" = clip ] && [ -z "${RANGE:-}" ] && { RANGE=$(pick_range); MIN=$RANGE; }   # MIN carries the range to playlist items
 
 # cookies by site
 case "$URL" in
   *instagram.com*) CK="$DOCS/www.instagram.com_cookies.txt"; RE='^sessionid$' ;;
   *)               CK="$DOCS/www.youtube.com_cookies.txt";   RE='^__Secure-(3PSID|1PSIDTS|3PSIDTS)$' ;;
 esac
-[ -n "${DL_CHILD:-}" ] || ck_status "$CK" "$RE" >/dev/null || echo "cookie warning: $(ck_status "$CK" "$RE") -> run 'dl cookies'"
+[ -n "${DL_CHILD:-}" ] || ck_status "$CK" "$RE" >/dev/null || echo "cookie warning: $(ck_status "$CK" "$RE") -> run 'magodownload cookies'"
 
 # file name: "<SITE> <title or page name> [id]"; IG/TikTok/X have no real title, so they use the page name
 case "$URL" in
@@ -205,5 +215,52 @@ case "$MODE" in
     [ -f "$D/live.mkv" ] && V=$D/live.mkv A=$D/live.mkv   # at the end yt-dlp merges everything into one file
     cut_chunks final
     echo "DONE. Temp files in $D (delete once you checked the chunks)" ;;
-  *) echo "invalid mode: $MODE (video|preview|post|mp3|aac|live)"; exit 1 ;;
+  clip)
+    hms() { awk -F: '{s=0; for(i=1;i<=NF;i++) s=s*60+$i; print s}' <<<"$1"; }   # 1:20:50 / 20:50 / 50 -> seconds
+    A=$(hms "${RANGE%-*}"); B=$(hms "${RANGE#*-}")
+    awk -v a="$A" -v b="$B" 'BEGIN{exit !(a>=0 && b>a)}' || { echo "invalid range: $RANGE (use start-end, e.g. 1:20:50-1:25:03)"; exit 1; }
+    LEN=$(awk -v a="$A" -v b="$B" 'BEGIN{print b-a}')
+    mapfile -t INFO < <("${YT[@]}" --print live_status --print "$NAMEFMT" "$URL" 2>/dev/null)
+    LS=${INFO[0]:-}; NAME=$(tr '/' '_' <<<"${INFO[1]:-}")
+    [ -n "$NAME" ] || { echo "could not read the video info"; exit 1; }
+    OUTF="$PWD/$NAME clip ${RANGE//:/.}.mp4"   # no ':' in names (Windows drives)
+    D=$(mktemp -d /tmp/dl_clip.XXXXXX)
+    VF='137/bv*[vcodec^=avc1]'; AF='140/ba[ext=m4a]'
+    VU=$("${YT[@]}" -g -f "$VF" "$URL" 2>/dev/null | head -1); AU=$("${YT[@]}" -g -f "$AF" "$URL" 2>/dev/null | head -1)
+    [ -n "$VU" ] && [ -n "$AU" ] || { echo "no h264/m4a formats found"; rm -rf "$D"; exit 1; }
+    if [ "$LS" = post_live ] || [ "$LS" = is_live ]; then
+      # live not processed into a VOD yet: no seekable file, only numbered fragments (&sq=N) with real timestamps
+      curl -sf --retry 3 -o "$D/probe.mp4" "$VU&sq=0" || { echo "live fragments unavailable"; rm -rf "$D"; exit 1; }
+      SEG=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$D/probe.mp4")
+      # 10s margin each side: fragment timestamps drift a little from sq*SEG
+      S0=$(awk -v t="$A" -v s="$SEG" 'BEGIN{n=int((t-10)/s); print (n<0?0:n)}')
+      S1=$(awk -v t="$B" -v s="$SEG" 'BEGIN{print int((t+10)/s)+1}')
+      echo "live ($LS): fragments $S0-$S1 (${SEG}s each)"
+      for k in v a; do
+        u=$VU; [ $k = a ] && u=$AU
+        mkdir -p "$D/$k"
+        seq "$S0" "$S1" | xargs -P8 -I{} curl -sf --retry 5 -o "$D/$k/{}.mp4" "$u&sq={}"
+        for ((n=S0; n<=S1; n++)); do
+          [ -s "$D/$k/$n.mp4" ] || { echo "fragment $n ($k) failed"; rm -rf "$D"; exit 1; }
+          cat "$D/$k/$n.mp4"
+        done > "$D/$k.mp4"
+      done
+      VI=$D/v.mp4; AI=$D/a.mp4
+    else
+      VI=$VU; AI=$AU   # normal video: ffmpeg seeks over http and reads only the range
+    fi
+    # seek offset inside each input (live fragments keep the stream's own timestamps)
+    off() { ffprobe -v error -show_entries format=start_time -of csv=p=0 "$1" | awk -v a="$A" '{o=a-$1; print (o<0?0:o)}'; }
+    OV=$(off "$VI"); OA=$(off "$AI")
+    [ -n "$OV" ] && [ -n "$OA" ] || { echo "could not read the source"; rm -rf "$D"; exit 1; }
+    ffmpeg -hide_banner -loglevel error -y -ss "$OV" -i "$VI" -ss "$OA" -i "$AI" -t "$LEN" -map 0:v:0 -map 1:a:0 \
+      -c:v libx264 -preset slow -crf 16 -profile:v high -pix_fmt yuv420p -c:a aac -b:a 192k \
+      -movflags +faststart -progress pipe:1 -nostats "$OUTF" 2>&1 \
+      | awk -F= -v s="$LEN" '/^out_time_us=/{p=$2/1000000/s*100; if(p>100)p=100; printf "\r  encoding %5.1f%%   ", p} /rror/{print "\n" $0}'
+    echo
+    GOT=$(dur "$OUTF"); GOT=${GOT:-0}
+    echo "saved: $OUTF (${GOT}s of ${LEN}s, $(( $(stat -c %s "$OUTF" 2>/dev/null || echo 0) / 1048576 )) MB)"
+    [ $((GOT + 2)) -ge "${LEN%.*}" ] || echo "  warning: clip is shorter than the range (source ends early?)"
+    rm -rf "$D" ;;
+  *) echo "invalid mode: $MODE (video|preview|post|mp3|aac|live|clip)"; exit 1 ;;
 esac
