@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Director/executor pair in tmux: executor (Opus high) in the pane below, director (Sonnet medium) here.
-# Usage: claude-pair            -> set up executor, then start the director in this pane
-#        claude-pair --setup    -> only make sure the executor is running; print its pane id
+# Usage: setup8500            -> set up executor, then start the director in this pane
+#        setup8500 --setup    -> only make sure the executor is running; print its pane id
 set -eu
-[[ -n ${TMUX_PANE:-} ]] || { echo "claude-pair: run inside tmux" >&2; exit 1; }
+[[ -n ${TMUX_PANE:-} ]] || { echo "setup8500: run inside tmux" >&2; exit 1; }
 me=$TMUX_PANE
 dir=$(tmux display -p -t "$me" '#{pane_current_path}')
 win=$(tmux display -p -t "$me" '#{session_name}:#{window_index}')
