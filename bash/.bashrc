@@ -14,6 +14,19 @@ alias la='ls --color=auto -Al'
 alias ls='ls --color=auto'
 alias grep='grep --color=auto'
 
+# magodownload takes links unquoted: an unquoted & would send it to the background and freeze the menu.
+# The alias turns the rest of the line into a comment; the function reads the raw line from history.
+# shortcut: a line starting with a space is not saved (ignorespace), so it reads the previous one; quote links then.
+alias magodownload='_magodownload #'
+_magodownload() {
+  local n line; local -a args
+  read -r n line < <(HISTTIMEFORMAT= history 1)
+  [[ $line == magodownload* ]] || { echo "magodownload: could not read the line, quote the link"; return 1; }
+  read -ra args <<< "${line#magodownload}"
+  args=("${args[@]#[\'\"]}"); args=("${args[@]%[\'\"]}")   # quotes still work
+  command magodownload "${args[@]}"
+}
+
 GREEN="\[$(tput setaf 2)\]"
 RESET="\[$(tput sgr0)\]"
 PS1="${GREEN}[\u@\h \W]\$${RESET} "
