@@ -37,7 +37,9 @@ while true; do
   if grep -qE '(Do you want to|Would you like to|❯ 1\.|Esc to cancel)' <<<"$tailtxt"; then
     [[ $state != input ]] && echo "❓ executor esperando resposta"
     state=input; idle_polls=0
-  elif grep -qE '…[[:space:]]*\(([0-9]+h[[:space:]]*)?([0-9]+m[[:space:]]*)?[0-9]+s' <<<"$tailtxt"; then
+  # A background shell/monitor ("· 1 shell" in the bottom bar) will wake the executor: not stopped yet.
+  elif grep -qE '…[[:space:]]*\(([0-9]+h[[:space:]]*)?([0-9]+m[[:space:]]*)?[0-9]+s' <<<"$tailtxt" ||
+    sed '/^[[:space:]]*$/d' <<<"$tailtxt" | tail -n 2 | grep -qE '· [0-9]+ (shell|monitor)'; then
     state=working; idle_polls=0
   else
     idle_polls=$((idle_polls + 1))

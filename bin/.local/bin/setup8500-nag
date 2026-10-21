@@ -8,7 +8,11 @@ every=${NAG_EVERY:-300} poll=${NAG_POLL:-30}
 name=$(tmux display -p -t "$dir_pane" '#{window_name}' 2>/dev/null)
 
 # Claude Code shows "Verb… (12s ·" or "(3m 4s ·" while working (same check as setup8500-monitor).
-working() { tmux capture-pane -p -t "$1" 2>/dev/null | sed '/^[[:space:]]*$/d' | tail -n 25 | grep -qE '…[[:space:]]*\(([0-9]+m[[:space:]]*)?[0-9]+s'; }
+# A background shell/monitor ("· 1 shell" in the bottom bar) also counts: it will wake that Claude up.
+working() {
+  local t; t=$(tmux capture-pane -p -t "$1" 2>/dev/null | sed '/^[[:space:]]*$/d' | tail -n 25)
+  grep -qE '…[[:space:]]*\(([0-9]+h[[:space:]]*)?([0-9]+m[[:space:]]*)?[0-9]+s' <<<"$t" || tail -n 2 <<<"$t" | grep -qE '· [0-9]+ (shell|monitor)'
+}
 
 idle=0
 while tmux list-panes -a -F '#{pane_id}' | grep -qxF "$dir_pane"; do # exit when the director pane is gone
