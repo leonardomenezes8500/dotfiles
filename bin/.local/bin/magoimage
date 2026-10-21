@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# magoimage PHOTO... - writes hd/PHOTO (same name) next to each photo, under 12 MB (WhatsApp's limit to send as a photo).
+# Keeps the highest resolution it can: lowers JPEG quality first, then shrinks 10% at a time.
+set -euo pipefail
+
+LIMIT=12000000 # bytes; 12 MB decimal stays under 12 MiB, leaves margin
+
+[ $# -gt 0 ] || { echo "usage: magoimage PHOTO..." >&2; exit 1; }
+
+for f in "$@"; do
+  [ -f "$f" ] || { echo "not found: $f" >&2; exit 1; }
+  name=$(basename "$f")
+  case "${name,,}" in *.jpg | *.jpeg) ;; *) name="${name%.*}.jpg" ;; esac # output is always JPEG
+  mkdir -p "$(dirname "$f")/hd"
+  out="$(dirname "$f")/hd/$name"
+  scale=100
+  while :; do
+    for q in 92 88 85; do
+      # auto-orient so phone photos aren't sideways; +profile drops EXIF/GPS but keeps color (ICC)
+      magick "$f" -auto-orient -resize "${scale}%" +profile '!icc,*' -quality "$q" "$out"
+      size=$(stat -c %s "$out")
+      if [ "$size" -lt "$LIMIT" ]; then
+        echo "$out  $(magick identify -format '%wx%h' "$out")  q$q  $((size / 1000000)).$((size / 100000 % 10)) MB"
+        continue 3
+      fi
+    done
+    scale=$((scale * 9 / 10))
+  done
+done
