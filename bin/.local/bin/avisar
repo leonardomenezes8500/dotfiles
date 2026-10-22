@@ -5,6 +5,10 @@ msg=${1:?usage: avisar "message" ["title"]}
 title=${2:-Claude precisa de você}
 # Single quotes doubled for PowerShell string literals.
 m=${msg//\'/\'\'}; t=${title//\'/\'\'}
-setsid /mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -WindowStyle Hidden -Command \
+# One popup on screen at a time: the rest wait in line (global lock) and show after the user clicks OK.
+# Idempotent: a title already on screen or in line is dropped (per-title lock, held until its OK).
+run=${XDG_RUNTIME_DIR:-/tmp}
+setsid flock -n "$run/avisar-$(printf %s "$title" | md5sum | cut -c1-16).lock" flock "$run/avisar.lock" \
+  /mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -WindowStyle Hidden -Command \
   "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show('$m', '$t', 'OK', 'Warning', 'Button1', 'ServiceNotification') | Out-Null" \
   >/dev/null 2>&1 < /dev/null &

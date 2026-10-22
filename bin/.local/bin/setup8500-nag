@@ -5,7 +5,6 @@
 set -u
 dir_pane=$1 exec_pane=$2
 every=${NAG_EVERY:-300} poll=${NAG_POLL:-30}
-name=$(tmux display -p -t "$dir_pane" '#{window_name}' 2>/dev/null)
 
 # Claude Code shows "Verb… (12s ·" or "(3m 4s ·" while working (same check as setup8500-monitor).
 # A background shell/monitor ("· 1 shell" in the bottom bar) also counts: it will wake that Claude up.
@@ -22,6 +21,8 @@ while tmux list-panes -a -F '#{pane_id}' | grep -qxF "$dir_pane"; do # exit when
     idle=$((idle + poll))
     if ((idle >= every)); then
       idle=0
+      # Read the name now: the window may have been renamed since start. avisar skips it if this popup is still open.
+      name=$(tmux display -p -t "$dir_pane" '#{window_name}' 2>/dev/null)
       [[ $(tmux show -wv -t "$dir_pane" @nag 2>/dev/null) == off ]] ||
         avisar "Diretor e executor parados: o $name está esperando você." "${name^} — esperando você"
     fi
